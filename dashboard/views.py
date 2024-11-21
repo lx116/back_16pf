@@ -13,31 +13,38 @@ class ExcelUploadView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request):
-        file = request.FILES['file']
+        file = request.FILES.get('file')
 
         if not file:
-            return Response({'error': 'No FIle Provided'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No File Provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            excel_data = pd.ExcelFile(file)
+            # Leer el archivo Excel
+            excel_data = pd.read_excel(file)
 
-            required_columns = ['name', 'age', 'gender',
-                                'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-                                'I', 'L', 'M', 'N', 'O', 'Q1', 'Q2', 'Q3', 'Q4',
-                                'An', 'Ex', 'So', 'In', 'Ob', 'Cr', 'Ne', 'Ps', 'Li', 'Ac']
+            required_columns = [
+                'name', 'age', 'gender',
+                'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+                'I', 'L', 'M', 'N', 'O', 'Q1', 'Q2', 'Q3', 'Q4',
+                'An', 'Ex', 'So', 'In', 'Ob', 'Cr', 'Ne', 'Ps', 'Li', 'Ac'
+            ]
 
+            # Verificar columnas faltantes
             missing_columns = [col for col in required_columns if col not in excel_data.columns]
-
             if missing_columns:
-                return Response({"error": f"Missing columns in Excel: {missing_columns}"},
-                                status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": f"Missing columns in Excel: {', '.join(missing_columns)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            # Contador para nombres automáticos
             current_count = Respondent.objects.count()
             new_counter = current_count + 1
 
+            # Procesar filas del Excel
             for _, row in excel_data.iterrows():
+                # Validar datos de la fila
                 name = row['name'] if pd.notnull(row['name']) else f"Estudiante {new_counter}"
-
                 if pd.isnull(row['name']):
                     new_counter += 1
 
@@ -46,11 +53,13 @@ class ExcelUploadView(APIView):
                     defaults={'age': row['age'], 'gender': row['gender']}
                 )
 
+                # Crear o actualizar PersonalityFactors
                 PersonalityFactors.objects.update_or_create(
                     respondent=respondent,
                     defaults={col: row[col] for col in required_columns[3:20]}  # Columnas de A a Q4
                 )
 
+                # Crear o actualizar Categorization
                 Categorization.objects.update_or_create(
                     respondent=respondent,
                     defaults={col: row[col] for col in required_columns[20:]}  # Columnas de An a Ac
@@ -58,9 +67,10 @@ class ExcelUploadView(APIView):
 
             return Response({"message": "Excel data processed successfully"}, status=status.HTTP_201_CREATED)
 
+        except ValueError as e:
+            return Response({'error': f'Invalid Excel File: {e}'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({'error': f'File Not Found {e}'}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response({'error': f'Unexpected error: {e}'}, status=status.HTTP_400_BAD_REQUEST)
 
 class RespondentListView(ListAPIView):
     queryset = Respondent.objects.all()
@@ -99,14 +109,15 @@ class PersonalityFactorsFilterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Filtrar y recuperar los valores de los factores
+        # Cambiar el nombre de la anotación para evitar conflicto
         factors = PersonalityFactors.objects.values(
-            respondent_id=F('respondent_id'),  # Para incluir el ID del Respondent
+            respondent_id_alias=F('respondent_id'),  # Alias para la anotación
             factor1=F(factor1),
             factor2=F(factor2)
         )
 
         return Response(factors, status=status.HTTP_200_OK)
+
 
 
 class CategorizationByRespondentView(ListAPIView):
@@ -119,13 +130,12 @@ class CategorizationByRespondentView(ListAPIView):
 
 class CategorizationFilterView(APIView):
     """
-    Vista para recuperar valores de dos categorías específicas elegidas por el usuario.
+    Vista para filtrar categorías específicas elegidas por el usuario.
     """
     def get(self, request, *args, **kwargs):
         # Recuperar parámetros de consulta
         category1 = request.query_params.get('category1')
         category2 = request.query_params.get('category2')
-        respondent_id = request.query_params.get('respondent_id')  # Nuevo parámetro opcional
 
         # Validar que ambas categorías se hayan proporcionado
         if not category1 or not category2:
@@ -135,23 +145,20 @@ class CategorizationFilterView(APIView):
             )
 
         # Validar que las categorías existen en el modelo
-        valid_categories = ['An', 'Ex', 'So', 'In', 'Ob', 'Cr', 'Ne', 'Ps', 'Li', 'Ac']
+        valid_categories = ['An', 'Ex', 'St', 'Sy']  # Agregar las categorías válidas
         if category1 not in valid_categories or category2 not in valid_categories:
             return Response(
                 {"error": f"Invalid categories. Valid categories are: {', '.join(valid_categories)}."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Construir consulta base
+        # Cambiar el nombre de la anotación para evitar conflicto
         query = Categorization.objects.values(
-            respondent_id=F('respondent_id'),
+            respondent_id_alias=F('respondent_id'),  # Alias para la anotación
             category1=F(category1),
             category2=F(category2)
         )
 
-        # Aplicar filtro por respondent_id si se proporciona
-        if respondent_id:
-            query = query.filter(respondent_id=respondent_id)
-
         return Response(query, status=status.HTTP_200_OK)
+
 

@@ -1,6 +1,6 @@
 import pandas as pd
 from django.db.models import F
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -22,12 +22,13 @@ class ExcelUploadView(APIView):
             # Leer el archivo Excel
             excel_data = pd.read_excel(file)
 
-            required_columns = [
-                'name', 'age', 'gender',
-                'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-                'I', 'L', 'M', 'N', 'O', 'Q1', 'Q2', 'Q3', 'Q4',
-                'An', 'Ex', 'So', 'In', 'Ob', 'Cr', 'Ne', 'Ps', 'Li', 'Ac'
+            # Columnas requeridas
+            personality_columns = [
+                'A', 'B', 'C', 'E', 'F', 'G', 'H',
+                'I', 'L', 'M', 'N', 'O', 'Q1', 'Q2', 'Q3', 'Q4'
             ]
+            categorization_columns = ['An', 'Ex', 'So', 'In', 'Ob', 'Cr', 'Ne', 'Ps', 'Li', 'Ac']
+            required_columns = ['name', 'age', 'gender'] + personality_columns + categorization_columns
 
             # Verificar columnas faltantes
             missing_columns = [col for col in required_columns if col not in excel_data.columns]
@@ -41,6 +42,9 @@ class ExcelUploadView(APIView):
             current_count = Respondent.objects.count()
             new_counter = current_count + 1
 
+            # Mapeo para género
+            gender_map = {'masculino': 'M', 'femenino': 'F'}
+
             # Procesar filas del Excel
             for _, row in excel_data.iterrows():
                 # Validar datos de la fila
@@ -48,21 +52,23 @@ class ExcelUploadView(APIView):
                 if pd.isnull(row['name']):
                     new_counter += 1
 
+                gender = gender_map.get(row['gender'].strip().lower(), row['gender'])  # Convertir género
+
                 respondent, _ = Respondent.objects.update_or_create(
                     name=name,
-                    defaults={'age': row['age'], 'gender': row['gender']}
+                    defaults={'age': row['age'], 'gender': gender}
                 )
 
                 # Crear o actualizar PersonalityFactors
                 PersonalityFactors.objects.update_or_create(
                     respondent=respondent,
-                    defaults={col: row[col] for col in required_columns[3:20]}  # Columnas de A a Q4
+                    defaults={col: row[col] for col in personality_columns if col in row}
                 )
 
                 # Crear o actualizar Categorization
                 Categorization.objects.update_or_create(
                     respondent=respondent,
-                    defaults={col: row[col] for col in required_columns[20:]}  # Columnas de An a Ac
+                    defaults={col: row[col] for col in categorization_columns if col in row}
                 )
 
             return Response({"message": "Excel data processed successfully"}, status=status.HTTP_201_CREATED)
@@ -77,12 +83,18 @@ class RespondentListView(ListAPIView):
     serializer_class = RespondentSerializer
 
 
+class RespondentDetailView(RetrieveAPIView):
+    queryset = Respondent.objects.all()
+    serializer_class = RespondentSerializer
+
 class PersonalityFactorsByRespondentView(ListAPIView):
     serializer_class = PersonalityFactorsSerializer
 
     def get_queryset(self):
         respondent_id = self.kwargs['respondent_id']
-        return PersonalityFactors.objects.filter(respondent_id=respondent_id)
+        queryset = PersonalityFactors.objects.filter(respondent_id=respondent_id)
+        print(f"Queryset for respondent_id {respondent_id}: {queryset}")
+        return queryset
 
 
 class PersonalityFactorsFilterView(APIView):
@@ -109,14 +121,16 @@ class PersonalityFactorsFilterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Cambiar el nombre de la anotación para evitar conflicto
-        factors = PersonalityFactors.objects.values(
-            respondent_id_alias=F('respondent_id'),  # Alias para la anotación
+        # Recuperar factores con IDs y nombres de los respondientes
+        factors = PersonalityFactors.objects.select_related('respondent').values(
+            annotated_respondent_id=F('respondent__id'),  # ID del respondiente
+            respondent_name=F('respondent__name'),  # Nombre del respondiente
             factor1=F(factor1),
             factor2=F(factor2)
         )
 
         return Response(factors, status=status.HTTP_200_OK)
+
 
 
 
@@ -145,7 +159,7 @@ class CategorizationFilterView(APIView):
             )
 
         # Validar que las categorías existen en el modelo
-        valid_categories = ['An', 'Ex', 'St', 'Sy']  # Agregar las categorías válidas
+        valid_categories = ['An', 'Ex', 'So', 'In', 'Ob', 'Cr', 'Ne', 'Ps', 'Li', 'Ac']  # Agregar las categorías válidas
         if category1 not in valid_categories or category2 not in valid_categories:
             return Response(
                 {"error": f"Invalid categories. Valid categories are: {', '.join(valid_categories)}."},
@@ -154,7 +168,8 @@ class CategorizationFilterView(APIView):
 
         # Cambiar el nombre de la anotación para evitar conflicto
         query = Categorization.objects.values(
-            respondent_id_alias=F('respondent_id'),  # Alias para la anotación
+            annotated_respondent_id=F('respondent__id'),  # ID del respondiente
+            respondent_name=F('respondent__name'),  # Nombre del respondiente
             category1=F(category1),
             category2=F(category2)
         )

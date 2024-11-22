@@ -15,7 +15,6 @@ class PersonalityFactors(models.Model):
     A = models.FloatField(null=True, blank=True)
     B = models.FloatField(null=True, blank=True)
     C = models.FloatField(null=True, blank=True)
-    D = models.FloatField(null=True, blank=True)
     E = models.FloatField(null=True, blank=True)
     F = models.FloatField(null=True, blank=True)
     G = models.FloatField(null=True, blank=True)

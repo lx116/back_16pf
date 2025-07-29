@@ -114,7 +114,7 @@ class PersonalityFactorsFilterView(APIView):
             )
 
         # Validar que los factores existen en el modelo
-        valid_factors = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'L', 'M', 'N', 'O', 'Q1', 'Q2', 'Q3', 'Q4']
+        valid_factors = ['A', 'B', 'C', 'E', 'F', 'G', 'H', 'I', 'L', 'M', 'N', 'O', 'Q1', 'Q2', 'Q3', 'Q4']
         if factor1 not in valid_factors or factor2 not in valid_factors:
             return Response(
                 {"error": f"Invalid factors. Valid factors are: {', '.join(valid_factors)}."},

@@ -53,25 +53,50 @@ class ExcelUploadViewTests(APITestCase):
 class PersonalityFactorsFilterViewTests(APITestCase):
 
     def setUp(self):
-        respondent = Respondent.objects.create(name="John Doe", age=25, gender="Male")
-        PersonalityFactors.objects.create(respondent=respondent, A=1, B=2, C=3, D=4)
+        # Crear un respondiente y factores asociados
+        self.respondent = Respondent.objects.create(name="John Doe", age=25, gender="Male")
+        PersonalityFactors.objects.create(respondent=self.respondent, A=1, B=2, C=3, E=4)
+
+        self.valid_url = '/api/personality-factors-filter/'
 
     def test_valid_factors(self):
-        response = self.client.get('/api/personality-factors-filter/', {'factor1': 'A', 'factor2': 'B'})
+        # Caso feliz: factores válidos
+        response = self.client.get(self.valid_url, {'factor1': 'A', 'factor2': 'B'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('factor1', response.data[0])
-        self.assertIn('factor2', response.data[0])
+        self.assertTrue(len(response.data) > 0)  # Hay resultados
+        self.assertEqual(response.data[0]['factor1'], 1)
+        self.assertEqual(response.data[0]['factor2'], 2)
 
     def test_missing_factors(self):
-        response = self.client.get('/api/personality-factors-filter/', {'factor1': 'A'})
+        # Faltan factores
+        response = self.client.get(self.valid_url, {'factor1': 'A'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Both 'factor1' and 'factor2' query parameters are required", response.data['error'])
 
     def test_invalid_factors(self):
-        response = self.client.get('/api/personality-factors-filter/', {'factor1': 'X', 'factor2': 'B'})
+        # Factores inválidos
+        response = self.client.get(self.valid_url, {'factor1': 'X', 'factor2': 'Y'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Invalid factors", response.data['error'])
 
+    def test_no_query_params(self):
+        # Sin parámetros de consulta
+        response = self.client.get(self.valid_url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Both 'factor1' and 'factor2' query parameters are required", response.data['error'])
+
+    def test_one_valid_one_invalid_factor(self):
+        # Un factor válido y uno inválido
+        response = self.client.get(self.valid_url, {'factor1': 'A', 'factor2': 'Z'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Invalid factors", response.data['error'])
+
+    def test_no_results_for_valid_factors(self):
+        # Factores válidos pero sin datos asociados
+        PersonalityFactors.objects.all().delete()  # Borrar datos
+        response = self.client.get(self.valid_url, {'factor1': 'A', 'factor2': 'B'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 0)  # Sin resultados
 
 class CategorizationFilterViewTests(APITestCase):
 
@@ -80,17 +105,17 @@ class CategorizationFilterViewTests(APITestCase):
         Categorization.objects.create(respondent=respondent, An=1, Ex=2, So=3)
 
     def test_valid_categories(self):
-        response = self.client.get('/api/categorization/filter/', {'category1': 'An', 'category2': 'Ex'})
+        response = self.client.get('/api/categorization-filter/', {'category1': 'An', 'category2': 'Ex'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('category1', response.data[0])
         self.assertIn('category2', response.data[0])
 
     def test_missing_categories(self):
-        response = self.client.get('/api/categorization/filter/', {'category1': 'An'})
+        response = self.client.get('/api/categorization-filter/', {'category1': 'An'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Both 'category1' and 'category2' query parameters are required", response.data['error'])
 
     def test_invalid_categories(self):
-        response = self.client.get('/api/categorization/filter/', {'category1': 'X', 'category2': 'Ex'})
+        response = self.client.get('/api/categorization-filter/', {'category1': 'X', 'category2': 'Ex'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Invalid categories", response.data['error'])
